@@ -17,7 +17,7 @@
 <body>
 
 <header class="topbar">
-  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.6.2 proje modu</small></div>
+  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.6.3 proje modu</small></div>
   <span id="netBadge" class="badge">Hazırlanıyor…</span>
 </header>
 
@@ -105,7 +105,7 @@
 
       <div class="card form-card">
         <div class="card-title-row"><h3>Fotoğraflar</h3><span id="photoCount" class="pill">0 foto</span></div>
-        <p class="hint">Kameradan fotoğraf çek veya galeriden ekle. Fotoğraflar otomatik küçültülüp sıkıştırılır; raporda kullanılacak fotoğrafı kartın altından seç.</p>
+        <p class="hint">Kameradan fotoğraf çek veya galeriden ekle. Fotoğraflar cihazda kalite korunarak sıkıştırılır; Excel raporuna seçilen fotoğraf ayrıca dosya boyutunu küçültmek için optimize edilir.</p>
         <div class="photo-buttons">
           <label class="btn secondary filebtn">📷 Fotoğraf Çek<input id="cameraInput" type="file" accept="image/*" capture="environment"></label>
           <label class="btn secondary filebtn">🖼 Galeriden Ekle<input id="galleryInput" type="file" accept="image/*" multiple></label>
@@ -673,6 +673,44 @@ window.APP_DATA = {
     let body='';photos.forEach((p,i)=>{body+=`<Relationship Id="rId${i+1}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/image" Target="../media/${p.filename}"/>`;});
     return `<?xml version="1.0" encoding="UTF-8" standalone="yes"?><Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">${body}</Relationships>`;
   }
+  async function compressReportPhotoBlob(blob){
+    if(!blob) return blob;
+    // Excel'de fotoğraf yalnız rapor kartı boyutunda gösteriliyor. Cihazdaki saha fotoğrafını
+    // değiştirmeden, Excel'e gömülen kopyayı 1100 px / yaklaşık 130 KB seviyesine indir.
+    // Böylece eski sürümlerde kaydedilmiş büyük fotoğraflar da export sırasında küçülür.
+    const url=URL.createObjectURL(blob);
+    let img;
+    try{
+      img=await new Promise((resolve,reject)=>{
+        const im=new Image();
+        im.onload=()=>resolve(im);
+        im.onerror=()=>reject(new Error('Rapor fotoğrafı okunamadı.'));
+        im.src=url;
+      });
+      const iw=img.naturalWidth||img.width, ih=img.naturalHeight||img.height;
+      if(!iw||!ih) return blob;
+      const target=130*1024;
+      let maxEdge=1100;
+      let best=null;
+      for(let sizePass=0; sizePass<3; sizePass++){
+        const scale=Math.min(1,maxEdge/Math.max(iw,ih));
+        const w=Math.max(1,Math.round(iw*scale)), h=Math.max(1,Math.round(ih*scale));
+        const c=document.createElement('canvas'); c.width=w; c.height=h;
+        const ctx=c.getContext('2d',{alpha:false});
+        ctx.drawImage(img,0,0,w,h);
+        for(const q of [0.72,0.64,0.56,0.48,0.42]){
+          const b=await new Promise((resolve,reject)=>c.toBlob(x=>x?resolve(x):reject(new Error('JPEG oluşturulamadı.')),'image/jpeg',q));
+          best=b;
+          if(b.size<=target) return b;
+        }
+        maxEdge=Math.round(maxEdge*0.82);
+      }
+      return best || blob;
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   async function exportWorkbook(records, opts={}){
     if(!records.length)throw new Error('Aktarılacak tespit yok.');
     const embeddedToArrayBuffer=()=>{const b64=window.__AFET_TEMPLATE_XLSX_B64;if(!b64) return null;const bin=atob(b64), bytes=new Uint8Array(bin.length);for(let i=0;i<bin.length;i++)bytes[i]=bin.charCodeAt(i);return bytes.buffer;};
@@ -701,7 +739,8 @@ window.APP_DATA = {
       const rec=records[i],inputRow=i+3,anchor=reportMap[inputRow];
       if(!rec.reportPhotoBlob||!anchor)continue;
       const filename=`afet_rapor_${String(i+1).padStart(3,'0')}.jpg`;
-      photos.push({blob:rec.reportPhotoBlob,filename,anchor});
+      const reportBlob=await compressReportPhotoBlob(rec.reportPhotoBlob);
+      photos.push({blob:reportBlob,filename,anchor});
     }
     if(photos.length){
       const drawingNums=Object.keys(zip.files).map(n=>(n.match(/^xl\/drawings\/drawing(\d+)\.xml$/)||[])[1]).filter(Boolean).map(Number);
