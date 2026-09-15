@@ -181,7 +181,7 @@
       <svg id="ambSvg" class="amb-svg" xmlns="http://www.w3.org/2000/svg" aria-label="AMB haritası"></svg>
       <div class="amb-legend"><div><i class="amb-red"></i>AMB sınırı</div><div><i class="amb-blue"></i>Konumun</div></div>
       <div class="amb-map-controls"><button id="ambZoomIn" type="button">＋</button><button id="ambZoomOut" type="button">−</button></div>
-      <div class="amb-map-note">Harita: <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">© OpenStreetMap contributors</a> • AMB sınırı ve iç/dış kontrolü offline çalışır.</div>
+      <div class="amb-map-note">Harita altlığı internet varsa OpenStreetMap'ten gelir. AMB sınırı ve iç/dış kontrolü offline çalışır.</div>
     </div>
     <div class="amb-recheck"><button id="ambRecheckBtn" class="btn primary" type="button">◎ Konumumu Yenile</button><button id="ambCenterBtn" class="btn secondary" type="button">⌖ Merkezle</button></div>
   </div>
@@ -912,6 +912,36 @@ window.APP_DATA = {
       zip.file('[Content_Types].xml',ct);
     }
   }
+  function patchReportNarratives(reportXml){
+    // Rapor kartlarındaki açıklama formüllerini export sırasında güncelle.
+    // Ham Excel şablonunu yeniden serialize etmiyoruz; böylece çalışan OOXML
+    // yapısı, fotoğraf yerleşimi ve diğer formüller değişmeden kalıyor.
+    // (?![^>]*\/>) self-closing <c .../> hücrelerinin sonraki hücreye taşmasını önler.
+    const cellRe=/<c(?![^>]*\/>)((?:[^>])*)>([\s\S]*?)<\/c>/g;
+    let changed=0;
+    reportXml=reportXml.replace(cellRe,(cell,attrs,inner)=>{
+      const refm=attrs.match(/\br="([A-Z]+\d+)"/);
+      const fm=inner.match(/<f[^>]*>([\s\S]*?)<\/f>/);
+      if(!refm||!fm)return cell;
+      const ref=refm[1];
+      const formula=unesc(fm[1]);
+      let inputRow=null;
+      const im=formula.match(/VLOOKUP\(GİRİŞ!A(\d+),İCMAL!\$B\$4:\$K\$(?:93|137|166),8,(?:1|FALSE)\)/i);
+      if(im)inputRow=Number(im[1]);
+      // Eski şablonda yalnız bu kartın açıklama formülü hatalı referans taşıyor:
+      // I505, sıralamada GİRİŞ satır 96'ya aittir fakat GİRİŞ!I102 yazılmıştır.
+      if(ref==='I505' && /VLOOKUP\(GİRİŞ!I102,İCMAL!\$B\$4:\$K\$93,8,1\)/i.test(formula))inputRow=96;
+      if(!inputRow)return cell;
+      const f=`IF(OR(GİRİŞ!J${inputRow}="AÇIK KANALLI MENFEZ",GİRİŞ!J${inputRow}="AÇIK KANAL",GİRİŞ!J${inputRow}="IZGARALI MENFEZ",GİRİŞ!J${inputRow}="BETONARME BÜZ",GİRİŞ!J${inputRow}="KORUGE BORU",GİRİŞ!J${inputRow}="MENFEZ"),"Belirtilen konumda yağmur sularının yol üzerinden kontrolsüz şekilde drene olduğu tespit edilmiştir. Mevcut drenaj sorununun giderilmesi ve ulaşımın güvenli şekilde sağlanması amacıyla "&LOWER(VLOOKUP(GİRİŞ!A${inputRow},İCMAL!$B$4:$K$166,8,FALSE))&" yapılması gerekmektedir.",IF(OR(GİRİŞ!J${inputRow}="BETON KAPLAMA",GİRİŞ!J${inputRow}="ASFALT KAPLAMA",GİRİŞ!J${inputRow}="STABİLİZE YOL ONARIM"),"Belirtilen konumda afet nedeniyle yol üstyapısının hasar gördüğü tespit edilmiştir. Güvenli ve kesintisiz ulaşımın yeniden sağlanması amacıyla hasarlı yol üstyapısının yerine "&LOWER(VLOOKUP(GİRİŞ!A${inputRow},İCMAL!$B$4:$K$166,8,FALSE))&" yapılması gerekmektedir.","Belirtilen konumda bulunan yolun yağmura bağlı toprak kayması meydana gelmiştir. Yolun kullanılır hale gelmesi için bu kapsamda "&LOWER(VLOOKUP(GİRİŞ!A${inputRow},İCMAL!$B$4:$K$166,8,FALSE))&" imalatı yapılması gerekmektedir."))`;
+      const encoded=f.replace(/&/g,'&amp;');
+      let updated=inner.replace(/<f[^>]*>[\s\S]*?<\/f>/,`<f>${encoded}</f>`);
+      updated=updated.replace(/<v>[\s\S]*?<\/v>/,'<v></v>');
+      changed++;
+      return `<c${attrs}>${updated}</c>`;
+    });
+    if(changed!==135)console.warn(`Rapor açıklama formüllerinden ${changed}/135 tanesi güncellendi.`);
+    return reportXml;
+  }
   function buildReportMap(reportXml){
     const map={};
     const re=/<c[^>]*r="([HPX])(\d+)"[^>]*>[\s\S]*?<f[^>]*>([\s\S]*?)<\/f>[\s\S]*?<\/c>/g;
@@ -985,6 +1015,8 @@ window.APP_DATA = {
     const reportPath=getSheetPath(workbookXml,wbRels,'Raporlar');
     let inputXml=await zip.file(inputPath).async('string');
     let reportXml=await zip.file(reportPath).async('string');
+    reportXml=patchReportNarratives(reportXml);
+    zip.file(reportPath,reportXml);
     const reportMap=buildReportMap(reportXml);
     if(records.length>169)throw new Error('GİRİŞ tablosu en fazla 169 tespit satırı içeriyor.');
 
@@ -1326,7 +1358,7 @@ function edgeDistanceMeters(lon,lat,a){const cos=Math.cos(lat*Math.PI/180),mx=11
 function nearestBoundary(lon,lat){let best=Infinity,bestA=null;for(const a of AMB_POLYS){const b=a.b;const dbox=Math.min(Math.abs(lon-b[0]),Math.abs(lon-b[2]),Math.abs(lat-b[1]),Math.abs(lat-b[3]));if(best<300 && dbox>0.01) continue;const d=edgeDistanceMeters(lon,lat,a);if(d<best){best=d;bestA=a;}}return {d:best,a:bestA};}
 function resultText(){if(!pos)return;const [lon,lat]=pos;const hits=checkInside(lon,lat);const near=nearestBoundary(lon,lat);const acc=Math.round(accuracy||0);const boundary=Math.round(near.d);const caution=boundary <= Math.max(15,acc*1.5);statusEl.className='amb-status '+(hits.length?'inside':'outside')+(caution?' near':'');if(hits.length){const ids=hits.map(x=>x.id||'?').join(', ');statusEl.innerHTML=`AMB İÇİNDE • AMB No: ${ids}<span class="sub">GPS doğruluğu yaklaşık ±${acc} m • en yakın AMB sınırı ~${boundary} m. Bu alanda yapı/ikamet kısıtı nedeniyle duvar vb. imalat önerisi oluşturmadan önce AMB durumunu esas al.${caution?' Sınır çok yakın; resmi CBS/KMZ kaydıyla doğrula.':''}</span>`;}else{statusEl.innerHTML=`AMB DIŞINDA<span class="sub">GPS doğruluğu yaklaşık ±${acc} m • en yakın AMB sınırı ~${boundary} m.${caution?' Sınır çok yakın; resmi CBS/KMZ kaydıyla doğrula.':''}</span>`;} }
 function render(){if(!pos||!map.clientWidth||!map.clientHeight)return;const w=map.clientWidth,h=map.clientHeight;svg.setAttribute('viewBox',`0 0 ${w} ${h}`);const c=center||pos,cp=merc(c[0],c[1],zoom),left=cp[0]-w/2,top=cp[1]-h/2;
- tiles.innerHTML='';if(navigator.onLine){const tx0=Math.floor(left/256),ty0=Math.floor(top/256),tx1=Math.floor((left+w)/256),ty1=Math.floor((top+h)/256),max=Math.pow(2,zoom);for(let ty=ty0;ty<=ty1;ty++){if(ty<0||ty>=max)continue;for(let tx=tx0;tx<=tx1;tx++){let x=((tx%max)+max)%max;const im=document.createElement('img');im.className='amb-tile';im.alt='';im.decoding='async';im.loading='eager';im.addEventListener('error',()=>{im.style.display='none';});im.src=`https://tile.openstreetmap.org/${zoom}/${x}/${ty}.png`;im.style.left=(tx*256-left)+'px';im.style.top=(ty*256-top)+'px';tiles.appendChild(im);}}}
+ tiles.innerHTML='';if(navigator.onLine){const tx0=Math.floor(left/256),ty0=Math.floor(top/256),tx1=Math.floor((left+w)/256),ty1=Math.floor((top+h)/256),max=Math.pow(2,zoom);for(let ty=ty0;ty<=ty1;ty++){if(ty<0||ty>=max)continue;for(let tx=tx0;tx<=tx1;tx++){let x=((tx%max)+max)%max;const im=document.createElement('img');im.className='amb-tile';im.alt='';im.decoding='async';im.loading='eager';im.referrerPolicy='no-referrer';im.src=`https://tile.openstreetmap.org/${zoom}/${x}/${ty}.png`;im.style.left=(tx*256-left)+'px';im.style.top=(ty*256-top)+'px';tiles.appendChild(im);}}}
  let paths='';const nw=invMerc(left,top,zoom),se=invMerc(left+w,top+h,zoom);const minLon=nw[0],maxLon=se[0],maxLat=nw[1],minLat=se[1];for(const a of AMB_POLYS){const b=a.b;if(b[2]<minLon||b[0]>maxLon||b[3]<minLat||b[1]>maxLat)continue;let d='';for(let i=0;i<a.p.length;i+=2){const q=merc(a.p[i],a.p[i+1],zoom);const x=q[0]-left,y=q[1]-top;d+=(i?'L':'M')+x.toFixed(1)+' '+y.toFixed(1);}d+='Z';paths+=`<path d="${d}" fill="rgba(215,39,39,.20)" stroke="#d72727" stroke-width="2" vector-effect="non-scaling-stroke"/>`;}
  const pp=merc(pos[0],pos[1],zoom),px=pp[0]-left,py=pp[1]-top;const accPx=(accuracy||0)/(156543.03392*Math.cos(pos[1]*Math.PI/180)/Math.pow(2,zoom));paths+=`<circle cx="${px}" cy="${py}" r="${Math.max(6,accPx).toFixed(1)}" fill="rgba(22,119,255,.12)" stroke="rgba(22,119,255,.35)" stroke-width="1"/><circle cx="${px}" cy="${py}" r="7" fill="#1677ff" stroke="#fff" stroke-width="3"/>`;svg.innerHTML=paths; }
 function stopWatch(){if(watchId!==null){navigator.geolocation.clearWatch(watchId);watchId=null;}if(stopTimer){clearTimeout(stopTimer);stopTimer=null;}}
