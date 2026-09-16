@@ -38,7 +38,7 @@
 <body>
 
 <header class="topbar">
-  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.10.2 PWA • köy + mahalle + belde + AMB</small></div>
+  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.10.3 PWA • köy + mahalle + belde + AMB</small></div>
   <span id="netBadge" class="badge">Hazırlanıyor…</span>
 </header>
 
@@ -122,6 +122,7 @@
           <label id="widthWrap">Genişlik (m)<input id="width" type="number" step="0.01" inputmode="decimal"></label>
           <label id="diamWrap">Çap (mm)<input id="diameter" type="number" step="1" inputmode="numeric"></label>
         </div>
+        <small id="artDimHint" class="hint" hidden></small>
         <label id="slopeWrap">Yol şevi bölgesi<input id="slope" placeholder="Örn. ALT ŞEV / ÜST ŞEV"></label>
         <label>Not <textarea id="note" rows="2" placeholder="Sahada gerekli kısa not"></textarea></label>
       </div>
@@ -1152,8 +1153,24 @@ function updateVillages(preserve){const d=els.district.value;const vals=APP_DATA
 els.district.addEventListener('change',()=>updateVillages());
 els.village.addEventListener('change',()=>{if(els.village.value==='DİĞER / ELLE GİR'){const v=prompt('Köy / mahalle adını yazın:');if(v){const o=document.createElement('option');o.value=v.toLocaleUpperCase('tr-TR');o.textContent=o.value;els.village.insertBefore(o,els.village.lastElementChild);els.village.value=o.value}else els.village.value='';}});
 
-function updateArtFields(){const a=els.art.value.toLocaleUpperCase('tr-TR');let show={len:true,h:true,w:true,d:true,s:true};if(/TAŞ DUVAR|PERDE DUVAR/.test(a))show={len:true,h:true,w:false,d:false,s:true};else if(/KORUGE|BÜZ/.test(a))show={len:true,h:false,w:false,d:true,s:false};else if(/KÖPRÜ/.test(a))show={len:true,h:false,w:false,d:false,s:false};else if(/BETON KAPLAMA|ASFALT KAPLAMA|STABİLİZE/.test(a))show={len:true,h:true,w:true,d:false,s:false};else if(/MENFEZ|KANAL/.test(a))show={len:true,h:true,w:true,d:false,s:false};els.lenWrap.hidden=!show.len;els.heightWrap.hidden=!show.h;els.widthWrap.hidden=!show.w;els.diamWrap.hidden=!show.d;els.slopeWrap.hidden=!show.s;}
-els.art.addEventListener('change',updateArtFields);
+function artFieldConfig(){
+ const a=els.art.value.toLocaleUpperCase('tr-TR');
+ let show={len:true,h:true,w:true,d:true,s:true},hint='';
+ if(/TAŞ DUVAR|PERDE DUVAR/.test(a))show={len:true,h:true,w:false,d:false,s:true};
+ else if(/KORUGE|BÜZ/.test(a))show={len:true,h:false,w:false,d:true,s:false};
+ else if(/KÖPRÜ/.test(a))show={len:true,h:false,w:false,d:false,s:false};
+ else if(/BETON KAPLAMA|ASFALT KAPLAMA/.test(a)){show={len:true,h:false,w:false,d:false,s:false};hint='Kaplama maliyeti 5,00 m yol genişliği ve 25 cm kalınlık sabit kabulüyle hesaplanır.';}
+ else if(/STABİLİZE/.test(a))show={len:true,h:true,w:true,d:false,s:false};
+ else if(/MENFEZ|KANAL/.test(a))show={len:true,h:true,w:true,d:false,s:false};
+ return {show,hint};
+}
+function updateArtFields(clearHidden=false){
+ const {show,hint}=artFieldConfig();
+ els.lenWrap.hidden=!show.len;els.heightWrap.hidden=!show.h;els.widthWrap.hidden=!show.w;els.diamWrap.hidden=!show.d;els.slopeWrap.hidden=!show.s;
+ const hintEl=$('#artDimHint');hintEl.textContent=hint;hintEl.hidden=!hint;
+ if(clearHidden){if(!show.len)els.length.value='';if(!show.h)els.height.value='';if(!show.w)els.width.value='';if(!show.d)els.diameter.value='';if(!show.s)els.slope.value='';}
+}
+els.art.addEventListener('change',()=>updateArtFields(true));
 
 function clearUrls(){objectUrls.forEach(URL.revokeObjectURL);objectUrls=[];}
 function photoMeta(p){const bits=[];if(p.capturedAt)bits.push(new Date(p.capturedAt).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}));if(Number.isFinite(p.gpsAccuracy))bits.push(`±${Math.round(p.gpsAccuracy)} m`);if(p.blob?.size)bits.push(`${Math.round(p.blob.size/1024)} KB`);return bits.join(' • ');}
@@ -1210,7 +1227,7 @@ async function editRecord(id){const r=await dbGet(id);if(!r)return;currentRecord
 function valueNum(el){const v=el && typeof el==='object' && 'value' in el ? el.value : el;const x=String(v??'').replace(',','.').trim();if(x==='')return '';const n=Number(x);return Number.isFinite(n)?n:'';}
 async function saveCurrent(){
  if(!els.district.value||!els.village.value||!els.art.value){toast('İlçe, köy/mahalle ve imalat cinsi gerekli.');return;}
- const old=currentRecord;const now=new Date().toISOString();const r={id:els.id.value,projectId:old?.projectId||activeProjectId,province:els.province.value.trim()||'RİZE',district:els.district.value,village:els.village.value,locationName:els.loc.value.trim(),roadType:els.road.value,priority:valueNum(els.priority),coordY:valueNum(els.y),coordX:valueNum(els.x),gpsAccuracy:valueNum(els.gps.dataset.accuracy),gpsCapturedAt:els.gps.dataset.capturedAt||'',artType:els.art.value,length:valueNum(els.length),height:valueNum(els.height),width:valueNum(els.width),diameter:valueNum(els.diameter),slope:els.slope.value.trim(),note:els.note.value.trim(),photos:currentPhotos,createdAt:old?.createdAt||now,updatedAt:now};
+ const old=currentRecord;const now=new Date().toISOString();const {show:artShow}=artFieldConfig();const r={id:els.id.value,projectId:old?.projectId||activeProjectId,province:els.province.value.trim()||'RİZE',district:els.district.value,village:els.village.value,locationName:els.loc.value.trim(),roadType:els.road.value,priority:valueNum(els.priority),coordY:valueNum(els.y),coordX:valueNum(els.x),gpsAccuracy:valueNum(els.gps.dataset.accuracy),gpsCapturedAt:els.gps.dataset.capturedAt||'',artType:els.art.value,length:artShow.len?valueNum(els.length):'',height:artShow.h?valueNum(els.height):'',width:artShow.w?valueNum(els.width):'',diameter:artShow.d?valueNum(els.diameter):'',slope:artShow.s?els.slope.value.trim():'',note:els.note.value.trim(),photos:currentPhotos,createdAt:old?.createdAt||now,updatedAt:now};
  await dbPut(r);toast('Tespit kaydedildi.');clearGpsWatch();show('home');await refreshList();
 }
 async function refreshList(){const q=els.search.value.toLocaleUpperCase('tr-TR').trim();const all=(await dbAll()).filter(r=>r.projectId===activeProjectId);let rows=[...all].sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));if(q)rows=rows.filter(r=>[r.district,r.village,r.locationName,r.artType].join(' ').toLocaleUpperCase('tr-TR').includes(q));els.count.textContent=`${all.length} tespit`;els.list.innerHTML='';els.empty.hidden=rows.length>0;rows.forEach((r,i)=>{const d=document.createElement('div');d.className='record card';const rp=(r.photos||[]).find(p=>p.selected)||(r.photos||[])[0];let thumb='<div class="thumb"></div>';if(rp){const u=URL.createObjectURL(rp.blob);objectUrls.push(u);thumb=`<img class="thumb" src="${u}" alt="Rapor fotoğrafı">`;}const gps=r.coordX!==''&&r.coordX!=null?`X ${r.coordX} / Y ${r.coordY}`:'Konum yok';d.innerHTML=`${thumb}<div><h3>${r.village||'—'}${r.locationName?' • '+r.locationName:''}</h3><p>${r.district||''} • ${r.artType||'İmalat girilmedi'}</p><p>${gps} • ${(r.photos||[]).length} foto</p></div><div class="num">#${i+1}</div>`;d.addEventListener('click',()=>editRecord(r.id));els.list.appendChild(d);});}
