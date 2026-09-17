@@ -1,4 +1,4 @@
-const CACHE_NAME = 'afet-saha-tespit-v0.10.4';
+const CACHE_NAME = 'afet-saha-tespit-v0.11';
 const APP_SHELL = [
   './',
   './index.html',
