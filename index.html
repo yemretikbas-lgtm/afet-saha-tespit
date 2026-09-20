@@ -38,7 +38,7 @@
 <body>
 
 <header class="topbar">
-  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.12.2 PWA • köy + mahalle + belde + AMB</small></div>
+  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.12.3 PWA • köy + mahalle + belde + AMB</small></div>
   <span id="netBadge" class="badge">Hazırlanıyor…</span>
 </header>
 
@@ -1051,7 +1051,7 @@ window.APP_DATA = {
     let reportXml=await zip.file(reportPath).async('string');
     let dataXml=await zip.file(dataPath).async('string');
     let summaryXml=await zip.file(summaryPath).async('string');
-    // Raporlar şablondaki haliyle korunur. İCMAL'de yalnız B1 proje başlığı formülü eklenir; fotoğraf varsa Raporlar çizim ilişkisi eklenir.
+    // Raporlar şablondaki haliyle korunur. İCMAL'de yalnız B1 proje başlığı formülü eklenir; mevcut H/I formülleri aynen korunur. Fotoğraf varsa Raporlar çizim ilişkisi eklenir.
     const reportMap=buildReportMap(reportXml);
     const reportCapacity=Object.keys(reportMap).length;
     if(records.length>reportCapacity)throw new Error(`Rapor şablonu en fazla ${reportCapacity} tespit destekliyor.`);
@@ -1065,12 +1065,11 @@ window.APP_DATA = {
     dataXml=setCell(dataXml,'T4','SORUMLU İDARE'); dataXml=setCell(dataXml,'U4',project.authority||'');
     const titleFormula=`IF(OR('VERİ'!$U$2="",'VERİ'!$U$3="",'VERİ'!$U$4=""),"PROJE BİLGİLERİ EKSİK","RİZE İLİ "&'VERİ'!$U$3&" İLÇESİ "&IF('VERİ'!$U$4="RİZE İL ÖZEL İDARESİ","RİZE İL ÖZEL İDARESİ SORUMLULUĞUNDAKİ KÖYLERDE",'VERİ'!$U$4&" SINIRLARINDAKİ MAHALLELERDE")&" "&'VERİ'!$U$2&" TARİHİNDE MEYDANA GELEN HEYELAN AFETİ İLE İLGİLİ ALTYAPI HASAR TESPİT İCMALİ")`;
     summaryXml=setFormulaCell(summaryXml,'B1',titleFormula);
-    // Her exportta İCMAL miktar metnini tekrar kur. Böylece uzunluk/yükseklik/genişlik
-    // daima metre (m), yalnız boru/büz çapı milimetre (mm) olarak rapora gider.
+    // İCMAL'deki H/I formüllerine dokunma. Son master Excel bu formülleri zaten doğru
+    // biçimde içeriyor (K/L/M metre, yalnız N çap milimetre). Export yalnız GİRİŞ verisini
+    // doldurur; böylece MİKTARI formülleri ve rapor metin zinciri masterdan aynen korunur.
     records.forEach((r,idx)=>{
-      const inputRow=idx+3, summaryRow=idx+4;
-      summaryXml=setFormulaCell(summaryXml,'H'+summaryRow,`GİRİŞ!J${inputRow}`);
-      summaryXml=setFormulaCell(summaryXml,'I'+summaryRow,quantityFormula(inputRow,summaryRow));
+      const inputRow=idx+3;
       // DİĞER tespitlerde otomatik imalat metni üretme; rapor açıklaması doğrudan SAHA NOTU olsun.
       const a=(r.artType||'').toLocaleUpperCase('tr-TR').trim();
       const card=reportMap[inputRow];
