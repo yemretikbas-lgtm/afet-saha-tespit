@@ -1,0 +1,276 @@
+function responsibleAuthorities(district){return ['RİZE İL ÖZEL İDARESİ',...(RESPONSIBLE_AUTHORITIES_BY_DISTRICT[district]||[])];}
+function projectRecordDistrictKey(p){
+ const a=p?.authority||'', d=p?.district||'';
+ const m={'KENDİRLİ BELEDİYESİ':'MERKEZ (KENDİRLİ)','MURADİYE BELEDİYESİ':'MERKEZ (MURADİYE)','SALARHA BELEDİYESİ':'MERKEZ (SALARHA)','BÜYÜKKÖY BELEDİYESİ':'ÇAYELİ (BÜYÜKKÖY)','MADENLİ BELEDİYESİ':'ÇAYELİ (MADENLİ)'};
+ return m[a]||d;
+}
+function trProjectDate(v){if(!v)return '';const m=String(v).match(/^(\d{4})-(\d{2})-(\d{2})$/);return m?`${m[3]}.${m[2]}.${m[1]}`:String(v);}
+function projectIcmalTitle(p){
+ if(!p?.disasterDate||!p?.district||!p?.authority)return 'İCMAL başlığı için afet tarihi, ilçe ve sorumlu idare gerekli.';
+ const loc=p.authority==='RİZE İL ÖZEL İDARESİ'?'RİZE İL ÖZEL İDARESİ SORUMLULUĞUNDAKİ KÖYLERDE':`${p.authority} SINIRLARINDAKİ MAHALLELERDE`;
+ return `RİZE İLİ ${p.district} İLÇESİ ${loc} ${trProjectDate(p.disasterDate)} TARİHİNDE MEYDANA GELEN HEYELAN AFETİ İLE İLGİLİ ALTYAPI HASAR TESPİT İCMALİ`;
+}
+function updateProjectAuthorities(preserve=''){
+ const d=els.projectDistrictInput.value;
+ addOptions(els.projectAuthorityInput,responsibleAuthorities(d),'— Sorumlu idare seç —');
+ if(preserve && responsibleAuthorities(d).includes(preserve))els.projectAuthorityInput.value=preserve;
+ updateProjectTitlePreview();
+}
+function updateProjectTitlePreview(){
+ const p={disasterDate:els.projectDisasterDateInput?.value||'',district:els.projectDistrictInput?.value||'',authority:els.projectAuthorityInput?.value||''};
+ if(els.projectTitlePreview)els.projectTitlePreview.textContent=projectIcmalTitle(p);
+}
+function isLocalhost(){return ['localhost','127.0.0.1','[::1]'].includes(location.hostname);}
+function isSecureEnough(){return window.isSecureContext || isLocalhost();}
+function isIos(){return /iphone|ipad|ipod/i.test(navigator.userAgent) || (/Macintosh/i.test(navigator.userAgent) && navigator.maxTouchPoints>1);}
+function isStandalone(){return matchMedia('(display-mode: standalone)').matches || navigator.standalone===true;}
+function cleanFileName(s){return String(s||'Proje').normalize('NFKD').replace(/[\u0300-\u036f]/g,'').replace(/[^a-zA-Z0-9ğüşöçıİĞÜŞÖÇ _.-]+/g,'').trim().replace(/\s+/g,'_').slice(0,80)||'Proje';}
+async function ensureProjectModel(){
+ let projects=(await projectAll()).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+ let rows=await dbAll();
+ if(!projects.length){const now=new Date().toISOString();const p={id:uid(),name:`RİZE Altyapı Hasar Tespiti ${now.slice(0,10)}`,district:'',disasterDate:'',authority:'',createdAt:now,updatedAt:now};await projectPut(p);projects=[p];}
+ let wanted=localStorage.getItem('afet-active-project');
+ if(!projects.some(p=>p.id===wanted))wanted=projects[0].id;
+ activeProjectId=wanted;localStorage.setItem('afet-active-project',activeProjectId);
+ const legacy=rows.filter(r=>!r.projectId);if(legacy.length){for(const r of legacy){r.projectId=activeProjectId;await dbPut(r);}}
+ await refreshProjects();
+}
+async function refreshProjects(){
+ const projects=(await projectAll()).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+ if(!projects.length)return;
+ if(!projects.some(p=>p.id===activeProjectId)){activeProjectId=projects[0].id;localStorage.setItem('afet-active-project',activeProjectId);}
+ els.projectSelect.innerHTML=projects.map(p=>`<option value="${p.id}">${p.name}</option>`).join('');els.projectSelect.value=activeProjectId;
+ const p=projects.find(x=>x.id===activeProjectId);els.projectNameLabel.textContent=p?.name||'Proje';els.projectMetaLabel.textContent=[p?.disasterDate?`Afet: ${trProjectDate(p.disasterDate)}`:'Afet tarihi eksik',p?.district?`İlçe: ${p.district}`:'İlçe eksik',p?.authority?`İdare: ${p.authority}`:'Sorumlu idare eksik','Bu Excel yalnız bu projenin tespitlerini içerir'].join(' • ');
+}
+async function activeProject(){return activeProjectId?projectGet(activeProjectId):null;}
+function openProjectDialog(mode='new'){
+ editingProjectId=mode==='edit'?activeProjectId:null;
+ els.projectDialogTitle.textContent=mode==='edit'?'Projeyi düzenle':'Yeni proje';
+ addOptions(els.projectDistrictInput,PROJECT_DISTRICTS,'— İlçe seç —');
+ if(mode==='edit'){
+   projectGet(activeProjectId).then(p=>{
+     if(!p)return;
+     els.projectNameInput.value=p.name||'';
+     els.projectDisasterDateInput.value=p.disasterDate||'';
+     els.projectDistrictInput.value=p.district||'';
+     updateProjectAuthorities(p.authority||'');
+     els.projectAuthorityInput.value=p.authority||'';
+     updateProjectTitlePreview();
+     els.projectDialog.showModal();
+   });
+ }else{
+   els.projectNameInput.value='';
+   els.projectDisasterDateInput.value='';
+   els.projectDistrictInput.value='';
+   updateProjectAuthorities('');
+   els.projectAuthorityInput.value='';
+   updateProjectTitlePreview();
+   els.projectDialog.showModal();
+ }
+}
+async function saveProject(){
+ const disasterDate=els.projectDisasterDateInput.value;
+ const district=els.projectDistrictInput.value;
+ const authority=els.projectAuthorityInput.value;
+ if(!disasterDate||!district||!authority){toast('Afet tarihi, ilçe ve sorumlu idare gerekli.');return;}
+ const typedName=els.projectNameInput.value.trim();
+ const name=typedName||`${district} ${trProjectDate(disasterDate)} ${authority}`;
+ const now=new Date().toISOString();
+ let p=editingProjectId?await projectGet(editingProjectId):null;
+ if(p){p={...p,name,district,disasterDate,authority,updatedAt:now};}
+ else{p={id:uid(),name,district,disasterDate,authority,createdAt:now,updatedAt:now};}
+ await projectPut(p);activeProjectId=p.id;localStorage.setItem('afet-active-project',p.id);els.projectDialog.close();await refreshProjects();await refreshList();toast(editingProjectId?'Proje güncellendi.':'Yeni proje açıldı.');editingProjectId=null;
+}
+els.projectDistrictInput.addEventListener('change',()=>updateProjectAuthorities());
+els.projectAuthorityInput.addEventListener('change',updateProjectTitlePreview);
+els.projectDisasterDateInput.addEventListener('change',updateProjectTitlePreview);
+
+const ACTIVE_ART_TYPES=['TAŞ DUVAR','AÇIK KANAL','MENFEZ','BETON KAPLAMA','ASFALT KAPLAMA','STABİLİZE YOL ONARIM','KORUGE BORU','BETONARME BÜZ','BLOKAJ'];
+const WALL_HEIGHTS=Array.from({length:23},(_,i)=>1+i*.5);
+const PIPE_DIAMETERS=[400,600,800,1000];
+const SLOPE_OPTIONS=['YOLUN ALT ŞEVİNE','YOLUN ÜST ŞEVİNE','YOLUN ÜST VE ALT ŞEVİNE'];
+const SECTION_OPTIONS={
+ 'MENFEZ':['1*1','1,5*1,5','2*2','2,5*2,5','3*3'],
+ 'AÇIK KANAL':['1*1']
+};
+function trNum(v){return String(v).replace('.',',');}
+function sectionDims(v){if(!v)return {h:'',w:''};const p=String(v).replace(/,/g,'.').split('*').map(Number);return {h:Number.isFinite(p[0])?p[0]:'',w:Number.isFinite(p[1])?p[1]:''};}
+function sectionValue(h,w){if(!Number.isFinite(Number(h))||!Number.isFinite(Number(w)))return '';return `${trNum(Number(h))}*${trNum(Number(w))}`;}
+function loadStaticOptions(){
+ addOptions(els.district,Object.keys(APP_DATA.districtVillages));
+ addOptions(els.road,APP_DATA.roadTypes);
+ addOptions(els.priority,APP_DATA.priorities);
+ addOptions(els.art,ACTIVE_ART_TYPES);
+ addOptions(els.wallHeight,WALL_HEIGHTS.map(trNum),'— Yükseklik seç —');
+ addOptions(els.diameter,PIPE_DIAMETERS,'— Çap seç —');
+ addOptions(els.slope,SLOPE_OPTIONS,'— Şev bölgesi seç —');
+ updateVillages();
+ updateArtFields();
+}
+function updateVillages(preserve){const d=els.district.value;const vals=APP_DATA.districtVillages[d]||[];addOptions(els.village,[...vals,'DİĞER / ELLE GİR']);if(preserve && !vals.includes(preserve)){const o=document.createElement('option');o.value=preserve;o.textContent=preserve;els.village.insertBefore(o,els.village.lastElementChild);}if(preserve)els.village.value=preserve;}
+els.district.addEventListener('change',()=>updateVillages());
+els.village.addEventListener('change',()=>{if(els.village.value==='DİĞER / ELLE GİR'){const v=prompt('Köy / mahalle adını yazın:');if(v){const o=document.createElement('option');o.value=v.toLocaleUpperCase('tr-TR');o.textContent=o.value;els.village.insertBefore(o,els.village.lastElementChild);els.village.value=o.value}else els.village.value='';}});
+
+function artFieldConfig(){
+ const a=els.art.value.toLocaleUpperCase('tr-TR').trim();
+ let show={len:false,h:false,w:false,d:false,s:false,wallH:false,section:false},hint='',fixed={};
+ if(!a){hint='İmalat cinsini seçtiğinde yalnız gerekli ölçü alanları açılır.';}
+ else if(a==='TAŞ DUVAR'){
+   show={len:true,h:false,w:false,d:false,s:true,wallH:true,section:false};
+   hint='Duvar yüksekliği yalnız maliyet altlığındaki 1,00–12,00 m değerlerinden seçilir.';
+ }
+ else if(a==='KORUGE BORU'||a==='BETONARME BÜZ'){
+   show={len:true,h:false,w:false,d:true,s:false,wallH:false,section:false};
+   hint='Çap yalnız maliyet altlığındaki Ø400 / Ø600 / Ø800 / Ø1000 seçeneklerinden seçilir.';
+ }
+ else if(a==='MENFEZ'||a==='AÇIK KANAL'){
+   show={len:true,h:false,w:false,d:false,s:false,wallH:false,section:true};
+   hint='Kesit yalnız Excel maliyet altlığında fiyatı bulunan kesitlerden seçilir.';
+ }
+ else if(a==='BETON KAPLAMA'||a==='ASFALT KAPLAMA'||a==='STABİLİZE YOL ONARIM'){
+   show={len:true,h:false,w:false,d:false,s:false,wallH:false,section:false};
+   hint='5,00 m yol genişliği ve 25 cm kalınlık Excel hesabında sabittir; yalnız boy girilir.';
+ }
+ else if(a==='BLOKAJ'){
+   show={len:true,h:true,w:false,d:false,s:false,wallH:false,section:false};
+   hint='Blokajda yol genişliği 5,00 m sabittir. Boy ve gerçek blokaj yüksekliği/derinliği girilir.';
+ }
+ return {show,hint,fixed};
+}
+function setArtField(wrap,input,on,clearHidden){
+ wrap.hidden=!on;
+ wrap.style.display=on?'':'none';
+ input.disabled=!on;
+ if(clearHidden&&!on)input.value='';
+}
+function updateArtFields(clearHidden=false){
+ const {show,hint}=artFieldConfig();
+ setArtField(els.lenWrap,els.length,show.len,clearHidden);
+ setArtField(els.heightWrap,els.height,show.h,clearHidden);
+ setArtField(els.widthWrap,els.width,show.w,clearHidden);
+ setArtField(els.wallHeightWrap,els.wallHeight,show.wallH,clearHidden);
+ setArtField(els.sectionWrap,els.section,show.section,clearHidden);
+ setArtField(els.diamWrap,els.diameter,show.d,clearHidden);
+ setArtField(els.slopeWrap,els.slope,show.s,clearHidden);
+ const a=els.art.value.toLocaleUpperCase('tr-TR').trim();
+ const keepSection=els.section.value;
+ if(show.section){addOptions(els.section,SECTION_OPTIONS[a]||[],'— Kesit seç —');if((SECTION_OPTIONS[a]||[]).includes(keepSection))els.section.value=keepSection;}
+ const hintEl=$('#artDimHint');hintEl.textContent=hint;hintEl.hidden=!hint;hintEl.style.display=hint?'':'none';
+}
+els.art.addEventListener('change',()=>updateArtFields(true));
+
+function measurementValues(){
+ const a=els.art.value.toLocaleUpperCase('tr-TR').trim();
+ let height='',width='',diameter='';
+ if(a==='TAŞ DUVAR')height=valueNum({value:String(els.wallHeight.value).replace(',','.')});
+ else if(a==='MENFEZ'||a==='AÇIK KANAL'){const d=sectionDims(els.section.value);height=d.h;width=d.w;}
+ else if(a==='BLOKAJ')height=valueNum(els.height);
+ if(a==='KORUGE BORU'||a==='BETONARME BÜZ')diameter=valueNum(els.diameter);
+ return {height,width,diameter};
+}
+function validateArtMeasurements(){
+ const a=els.art.value.toLocaleUpperCase('tr-TR').trim();
+ if(!valueNum(els.length)||valueNum(els.length)<=0)return 'Boy / uzunluk değeri gerekli.';
+ if(a==='TAŞ DUVAR'&&!els.wallHeight.value)return 'Duvar yüksekliğini seç.';
+ if((a==='MENFEZ'||a==='AÇIK KANAL')&&!els.section.value)return 'Kesit seç.';
+ if((a==='KORUGE BORU'||a==='BETONARME BÜZ')&&!els.diameter.value)return 'Çap seç.';
+ if(a==='BLOKAJ'&&(!valueNum(els.height)||valueNum(els.height)<=0))return 'Blokaj yüksekliği / derinliği gerekli.';
+ if(a==='TAŞ DUVAR'&&!els.slope.value)return 'Yol şevi bölgesini seç.';
+ return '';
+}
+
+function clearUrls(){objectUrls.forEach(URL.revokeObjectURL);objectUrls=[];}
+function photoMeta(p){const bits=[];if(p.capturedAt)bits.push(new Date(p.capturedAt).toLocaleTimeString('tr-TR',{hour:'2-digit',minute:'2-digit'}));if(Number.isFinite(p.gpsAccuracy))bits.push(`±${Math.round(p.gpsAccuracy)} m`);if(p.blob?.size)bits.push(`${Math.round(p.blob.size/1024)} KB`);return bits.join(' • ');}
+function renderPhotos(){
+ clearUrls();els.photos.innerHTML='';els.photoCount.textContent=`${currentPhotos.length} foto`;
+ if(!currentPhotos.length){els.photoStatus.hidden=false;els.photoStatus.textContent='Fotoğraf eklenmedi.';return;}
+ els.photoStatus.hidden=true;
+ currentPhotos.forEach((p,i)=>{const u=URL.createObjectURL(p.blob);objectUrls.push(u);const div=document.createElement('div');div.className='photo'+(p.selected?' selected':'');div.innerHTML=`<img src="${u}" alt="Saha fotoğrafı">${p.selected?'<span class="selected-badge">RAPOR</span>':''}<div class="photo-meta">${photoMeta(p)}</div><div class="photo-actions"><button type="button" data-select="${i}">${p.selected?'✓ Rapor fotoğrafı':'Rapora seç'}</button><button type="button" data-del="${i}">Sil</button></div>`;els.photos.appendChild(div);});
+}
+els.photos.addEventListener('click',e=>{const s=e.target.dataset.select,d=e.target.dataset.del;if(s!==undefined){currentPhotos.forEach((p,i)=>p.selected=i===+s);renderPhotos();}if(d!==undefined){const was=currentPhotos[+d].selected;currentPhotos.splice(+d,1);if(was&&currentPhotos[0])currentPhotos[0].selected=true;renderPhotos();}});
+
+async function loadBitmap(file){
+ if('createImageBitmap' in window){try{return await createImageBitmap(file,{imageOrientation:'from-image'});}catch(_){try{return await createImageBitmap(file);}catch(__){}}}
+ return await new Promise((resolve,reject)=>{const url=URL.createObjectURL(file),img=new Image();img.onload=()=>{URL.revokeObjectURL(url);resolve(img)};img.onerror=()=>{URL.revokeObjectURL(url);reject(new Error('Fotoğraf açılamadı.'))};img.src=url;});
+}
+async function canvasJpegBlob(canvas,quality){
+ return await new Promise((res,rej)=>canvas.toBlob(b=>b?res(b):rej(new Error('Fotoğraf JPEG olarak hazırlanamadı.')),'image/jpeg',quality));
+}
+async function normalizeImage(file){
+ const img=await loadBitmap(file);const iw=img.width||img.naturalWidth,ih=img.height||img.naturalHeight;if(!iw||!ih)throw new Error('Fotoğraf boyutu okunamadı.');
+ // Saha arşivi + Excel raporu için dengeli sıkıştırma: uzun kenar en çok 1600 px,
+ // hedef yaklaşık 420 KB/foto. Böylece 50-100 rapor fotoğrafında Excel gereksiz büyümez.
+ const max=1600,scale=Math.min(1,max/Math.max(iw,ih)),w=Math.max(1,Math.round(iw*scale)),h=Math.max(1,Math.round(ih*scale));
+ const c=document.createElement('canvas');c.width=w;c.height=h;const ctx=c.getContext('2d',{alpha:false});ctx.drawImage(img,0,0,w,h);img.close?.();
+ const target=420*1024;let q=.78,blob=await canvasJpegBlob(c,q);
+ while(blob.size>target && q>.54){q=Math.max(.54,q-.06);blob=await canvasJpegBlob(c,q);}
+ return {id:uid(),blob,width:w,height:h,selected:false,capturedAt:new Date().toISOString(),coordX:valueNum(els.x),coordY:valueNum(els.y),gpsAccuracy:valueNum(els.gps.dataset.accuracy)};
+}
+
+async function addPhotoFiles(files){
+ const list=[...files].filter(f=>f && /^image\//.test(f.type));if(!list.length)return;
+ els.cameraInput.disabled=true;els.galleryInput.disabled=true;els.photoStatus.hidden=false;els.photoStatus.textContent='Fotoğraflar hazırlanıyor…';
+ let added=0;
+ for(const f of list){try{currentPhotos.push(await normalizeImage(f));added++;}catch(err){console.error(err);toast(`Fotoğraf eklenemedi: ${err.message}`);}}
+ if(!currentPhotos.some(p=>p.selected)&&currentPhotos[0])currentPhotos[0].selected=true;
+ els.cameraInput.value='';els.galleryInput.value='';els.cameraInput.disabled=false;els.galleryInput.disabled=false;renderPhotos();if(added)toast(`${added} fotoğraf eklendi.`);
+}
+els.cameraInput.addEventListener('change',e=>addPhotoFiles(e.target.files));
+els.galleryInput.addEventListener('change',e=>addPhotoFiles(e.target.files));
+
+function clearGpsWatch(){if(gpsWatchId!==null){navigator.geolocation?.clearWatch(gpsWatchId);gpsWatchId=null;}if(gpsStopTimer){clearTimeout(gpsStopTimer);gpsStopTimer=null;}}
+function applyPosition(p,final=false){els.x.value=p.coords.latitude.toFixed(7);els.y.value=p.coords.longitude.toFixed(7);const acc=Math.round(p.coords.accuracy);els.gpsStatus.textContent=`Konum ${final?'alındı':'iyileştiriliyor'} • doğruluk yaklaşık ±${acc} m`;els.gps.dataset.accuracy=String(p.coords.accuracy);els.gps.dataset.capturedAt=new Date(p.timestamp||Date.now()).toISOString();if(acc<=8){clearGpsWatch();els.gps.disabled=false;els.gpsStatus.textContent=`Konum alındı • doğruluk yaklaşık ±${acc} m`;}}
+function gpsErrorText(err){if(err.code===1)return 'Konum izni verilmedi. Telefon ayarlarından bu site/uygulama için konuma izin ver.';if(err.code===2)return 'GPS konumu şu anda belirlenemedi. Açık alanda tekrar dene.';if(err.code===3)return 'GPS zaman aşımına uğradı. Tekrar dene.';return err.message||'Konum alınamadı.';}
+function getGps(){
+ if(!isSecureEnough()){els.gpsStatus.textContent='GPS için uygulamanın HTTPS adresinden açılması gerekiyor.';toast('GPS için HTTPS gerekiyor.');return;}
+ if(!navigator.geolocation){toast('Bu cihaz konum özelliğini desteklemiyor.');return;}
+ clearGpsWatch();els.gps.disabled=true;els.gpsStatus.textContent='GPS konumu aranıyor…';let best=null;
+ gpsWatchId=navigator.geolocation.watchPosition(p=>{if(!best||p.coords.accuracy<best.coords.accuracy)best=p;applyPosition(best,false);},err=>{clearGpsWatch();els.gps.disabled=false;els.gpsStatus.textContent=gpsErrorText(err);},{enableHighAccuracy:true,timeout:20000,maximumAge:0});
+ gpsStopTimer=setTimeout(()=>{clearGpsWatch();els.gps.disabled=false;if(best)applyPosition(best,true);else els.gpsStatus.textContent='Konum alınamadı. “Konumu Yenile” ile tekrar dene.';},12000);
+}
+
+async function blankForm(){els.formEl.reset();els.id.value=uid();els.province.value='RİZE';currentPhotos=[];currentRecord=null;loadStaticOptions();const p=await activeProject();els.district.disabled=false;const dk=projectRecordDistrictKey(p);if(dk&&APP_DATA.districtVillages[dk]){els.district.value=dk;updateVillages();}renderPhotos();updateArtFields();els.gpsStatus.textContent='Konum otomatik alınıyor…';els.gps.dataset.accuracy='';els.gps.dataset.capturedAt='';els.deleteBtn.hidden=true;$('#formTitle').textContent='Yeni Tespit';}
+async function editRecord(id){const r=await dbGet(id);if(!r)return;currentRecord=r;els.id.value=r.id;els.province.value=r.province||'RİZE';els.district.disabled=false;els.district.value=r.district||'';updateVillages(r.village||'');els.loc.value=r.locationName||'';els.road.value=r.roadType||'';els.priority.value=r.priority??'';els.y.value=r.coordY??'';els.x.value=r.coordX??'';els.art.value=ACTIVE_ART_TYPES.includes((r.artType||'').toLocaleUpperCase('tr-TR'))?r.artType:'';els.length.value=r.length??'';els.height.value=r.height??'';els.width.value=r.width??'';els.slope.value=r.slope||'';els.note.value=r.note||'';currentPhotos=(r.photos||[]).map(p=>({...p}));els.gps.dataset.accuracy=r.gpsAccuracy??'';els.gps.dataset.capturedAt=r.gpsCapturedAt||'';els.gpsStatus.textContent=r.coordX!==''&&r.coordX!=null?`Kayıtlı konum • X ${r.coordX}, Y ${r.coordY}${Number.isFinite(r.gpsAccuracy)?` • ±${Math.round(r.gpsAccuracy)} m`:''}`:'Henüz konum alınmadı.';els.deleteBtn.hidden=false;$('#formTitle').textContent='Tespiti Düzenle';updateArtFields();if(els.art.value==='TAŞ DUVAR')els.wallHeight.value=trNum(r.height??'');if(els.art.value==='MENFEZ'||els.art.value==='AÇIK KANAL')els.section.value=sectionValue(r.height,r.width);if(els.art.value==='KORUGE BORU'||els.art.value==='BETONARME BÜZ')els.diameter.value=String(r.diameter??'');renderPhotos();show('form');}
+function valueNum(el){const v=el && typeof el==='object' && 'value' in el ? el.value : el;const x=String(v??'').replace(',','.').trim();if(x==='')return '';const n=Number(x);return Number.isFinite(n)?n:'';}
+async function saveCurrent(){
+ const missing=[];
+ if(!els.district.value)missing.push('İlçe');
+ if(!els.village.value)missing.push('Köy / mahalle');
+ if(!els.art.value)missing.push('İmalat cinsi');
+ if(!currentPhotos.length)missing.push('En az 1 fotoğraf');
+ if(missing.length){
+   const msg='Kayıt yapılmadı. Eksik alanlar:\n• '+missing.join('\n• ');
+   alert(msg);toast('Eksik alan var; kayıt yapılmadı.');return;
+ }
+ const measureError=validateArtMeasurements();if(measureError){alert('Kayıt yapılmadı.\n'+measureError);return;}
+ const old=currentRecord;const now=new Date().toISOString();const {show:artShow}=artFieldConfig();const mv=measurementValues();const r={id:els.id.value,projectId:old?.projectId||activeProjectId,province:els.province.value.trim()||'RİZE',district:els.district.value,village:els.village.value,locationName:els.loc.value.trim(),roadType:els.road.value,priority:valueNum(els.priority),coordY:valueNum(els.y),coordX:valueNum(els.x),gpsAccuracy:valueNum(els.gps.dataset.accuracy),gpsCapturedAt:els.gps.dataset.capturedAt||'',artType:els.art.value,length:artShow.len?valueNum(els.length):'',height:mv.height,width:mv.width,diameter:mv.diameter,slope:artShow.s?els.slope.value:'',note:els.note.value.trim(),photos:currentPhotos,createdAt:old?.createdAt||now,updatedAt:now};
+ await dbPut(r);toast('Tespit kaydedildi.');clearGpsWatch();show('home');await refreshList();
+}
+async function refreshList(){const q=els.search.value.toLocaleUpperCase('tr-TR').trim();const all=(await dbAll()).filter(r=>r.projectId===activeProjectId);let rows=[...all].sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));if(q)rows=rows.filter(r=>[r.district,r.village,r.locationName,r.artType].join(' ').toLocaleUpperCase('tr-TR').includes(q));els.count.textContent=`${all.length} tespit`;els.list.innerHTML='';els.empty.hidden=rows.length>0;rows.forEach((r,i)=>{const d=document.createElement('div');d.className='record card';const rp=(r.photos||[]).find(p=>p.selected)||(r.photos||[])[0];let thumb='<div class="thumb"></div>';if(rp){const u=URL.createObjectURL(rp.blob);objectUrls.push(u);thumb=`<img class="thumb" src="${u}" alt="Rapor fotoğrafı">`;}const gps=r.coordX!==''&&r.coordX!=null?`X ${r.coordX} / Y ${r.coordY}`:'Konum yok';d.innerHTML=`${thumb}<div><h3>${r.village||'—'}${r.locationName?' • '+r.locationName:''}</h3><p>${r.district||''} • ${r.artType||'İmalat girilmedi'}</p><p>${gps} • ${(r.photos||[]).length} foto</p></div><div class="num">#${i+1}</div>`;d.addEventListener('click',()=>editRecord(r.id));els.list.appendChild(d);});}
+async function recordsForExport(){return (await dbAll()).filter(r=>r.projectId===activeProjectId).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||'')).map(r=>({...r,reportPhotoBlob:((r.photos||[]).find(p=>p.selected)||(r.photos||[])[0])?.blob||null}));}
+function downloadBlob(blob,name){if(blob.type==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){name=(name||'Altyapi_Hasar_Tespit.xlsx').replace(/\.zip$/i,'');if(!/\.xlsx$/i.test(name))name=name.replace(/\.[^.]+$/,'')+'.xlsx';}const a=document.createElement('a');const u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);}
+async function doExport(){const recs=await recordsForExport();const project=await activeProject();if(!project?.disasterDate||!project?.district||!project?.authority){toast('Önce proje bilgilerini tamamla.');openProjectDialog('edit');return;}if(!recs.length){toast('Önce tespit kaydı oluştur.');return;}const unsupported=recs.filter(r=>!ACTIVE_ART_TYPES.includes((r.artType||'').toLocaleUpperCase('tr-TR')));if(unsupported.length){els.exportProgress.textContent=`${unsupported.length} eski kayıtta artık desteklenmeyen imalat var. Önce bu kayıtları düzenle.`;toast('Desteklenmeyen eski imalat kaydı var.');return;}const incomplete=recs.filter(r=>!r.village||!r.artType||!r.reportPhotoBlob);if(incomplete.length){const msg=`${incomplete.length} tespitte köy/mahalle, imalat cinsi veya fotoğraf eksik. Excel oluşturulmadı. Eksik kayıtları tamamla.`;els.exportProgress.textContent=msg;alert(msg);return;}els.exportProgress.textContent='Excel hazırlanıyor; GİRİŞ dolduruluyor ve fotoğraflar yerleştiriliyor…';$('#doExportBtn').disabled=true;try{const blob=await XlsxExporter.exportWorkbook(recs,{project});const name=els.exportName.value.trim()||'Altyapi_Hasar_Tespit.xlsx';downloadBlob(blob,name);els.exportProgress.textContent='Excel oluşturuldu. Dosya cihazın İndirilenler klasörüne kaydedildi.';toast('Excel oluşturuldu.');setTimeout(()=>els.dialog.close(),900);}catch(e){console.error(e);els.exportProgress.textContent='Hata: '+e.message;}finally{$('#doExportBtn').disabled=false;}}
+
+function blobToDataUrl(blob){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(fr.error);fr.readAsDataURL(blob);});}
+async function serializeRecords(rows){
+ const serial=[];
+ for(const r of rows){
+   const rr={...r,photos:[]};
+   for(const p of (r.photos||[])){
+     const data=await blobToDataUrl(p.blob);
+     rr.photos.push({...p,blob:undefined,data});
+   }
+   serial.push(rr);
+ }
+ return serial;
+}
+async function backupActiveProject(){
+ const project=await activeProject();
+ if(!project){toast('Aktif proje bulunamadı.');return;}
+ const rows=(await dbAll()).filter(r=>r.projectId===project.id).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));
+ const serial=await serializeRecords(rows);
+ const payload={version:4,kind:'afet-saha-project',createdAt:new Date().toISOString(),project,records:serial};
+ const name=`${cleanFileName(project.name)}_YEDEK_${new Date().toISOString().slice(0,10)}.json`;
+ downloadBlob(new Blob([JSON.stringify(payload,null,2)],{type:'application/json'}),name);
+ toast(`${rows.length} tespitlik proje yedeği oluşturuldu.`);
+}

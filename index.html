@@ -38,7 +38,7 @@
 <body>
 
 <header class="topbar">
-  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.12.1 PWA • köy + mahalle + belde + AMB</small></div>
+  <div><strong>Afet Saha Tespit</strong><small>Altyapı hasarı • Rize • v0.12.2 PWA • köy + mahalle + belde + AMB</small></div>
   <span id="netBadge" class="badge">Hazırlanıyor…</span>
 </header>
 
@@ -126,7 +126,7 @@
         </div>
         <small id="artDimHint" class="hint" hidden></small>
         <label id="slopeWrap">Yol şevi bölgesi<select id="slope"></select></label>
-        <label>Not <textarea id="note" rows="2" placeholder="Sahada gerekli kısa not"></textarea></label>
+        <label>Saha Notu <textarea id="note" rows="2" placeholder="Sahada gerekli kısa not"></textarea></label>
       </div>
 
       <div class="card form-card">
@@ -822,7 +822,8 @@ window.APP_DATA = {
     "STABİLİZE YOL ONARIM",
     "KORUGE BORU",
     "BETONARME BÜZ",
-    "BLOKAJ"
+    "BLOKAJ",
+    "DİĞER"
   ],
   "roadTypes": [
     "ANAYOL",
@@ -977,7 +978,8 @@ window.APP_DATA = {
       const fm=f.match(/^(?:'?)GİRİŞ(?:'?)!A(\d+)$/); if(!fm)continue;
       const inputRow=+fm[1], cardRow=+m[2];
       const photoStartCol=m[1]==='H'?3:m[1]==='P'?11:19; // D,L,T 0-based
-      map[inputRow]={fromCol:photoStartCol,fromRow:cardRow+3,toCol:photoStartCol+5,toRow:cardRow+15}; // D5:I17 boundaries
+      const narrativeCol=m[1]==='H'?'A':m[1]==='P'?'I':'Q';
+      map[inputRow]={fromCol:photoStartCol,fromRow:cardRow+3,toCol:photoStartCol+5,toRow:cardRow+15,narrativeRef:narrativeCol+(cardRow+5)}; // foto + açıklama hücresi
     }
     return map;
   }
@@ -1069,6 +1071,12 @@ window.APP_DATA = {
       const inputRow=idx+3, summaryRow=idx+4;
       summaryXml=setFormulaCell(summaryXml,'H'+summaryRow,`GİRİŞ!J${inputRow}`);
       summaryXml=setFormulaCell(summaryXml,'I'+summaryRow,quantityFormula(inputRow,summaryRow));
+      // DİĞER tespitlerde otomatik imalat metni üretme; rapor açıklaması doğrudan SAHA NOTU olsun.
+      const a=(r.artType||'').toLocaleUpperCase('tr-TR').trim();
+      const card=reportMap[inputRow];
+      if(a==='DİĞER'&&card?.narrativeRef){
+        reportXml=setFormulaCell(reportXml,card.narrativeRef,`IF(GİRİŞ!J${inputRow}="","",GİRİŞ!Q${inputRow})`);
+      }
     });
     zip.file(dataPath,dataXml);
     zip.file(summaryPath,summaryXml);
@@ -1264,7 +1272,7 @@ els.projectDistrictInput.addEventListener('change',()=>updateProjectAuthorities(
 els.projectAuthorityInput.addEventListener('change',updateProjectTitlePreview);
 els.projectDisasterDateInput.addEventListener('change',updateProjectTitlePreview);
 
-const ACTIVE_ART_TYPES=['TAŞ DUVAR','AÇIK KANAL','MENFEZ','BETON KAPLAMA','ASFALT KAPLAMA','STABİLİZE YOL ONARIM','KORUGE BORU','BETONARME BÜZ','BLOKAJ'];
+const ACTIVE_ART_TYPES=['TAŞ DUVAR','AÇIK KANAL','MENFEZ','BETON KAPLAMA','ASFALT KAPLAMA','STABİLİZE YOL ONARIM','KORUGE BORU','BETONARME BÜZ','BLOKAJ','DİĞER'];
 const WALL_HEIGHTS=Array.from({length:23},(_,i)=>1+i*.5);
 const PIPE_DIAMETERS=[400,600,800,1000];
 const SLOPE_OPTIONS=['YOLUN ALT ŞEVİNE','YOLUN ÜST ŞEVİNE','YOLUN ÜST VE ALT ŞEVİNE'];
@@ -1314,6 +1322,10 @@ function artFieldConfig(){
    show={len:true,h:true,w:false,d:false,s:false,wallH:false,section:false};
    hint='Blokajda yol genişliği 5,00 m sabittir. Boy ve gerçek blokaj yüksekliği/derinliği girilir.';
  }
+ else if(a==='DİĞER'){
+   show={len:false,h:false,w:false,d:false,s:false,wallH:false,section:false};
+   hint='Geçici saha tespiti: ölçü girilmez. Saha notu rapor açıklaması olarak kullanılır ve Excel/Raporlar çıktısında normal imalatlardan sonra en sona taşınır.';
+ }
  return {show,hint,fixed};
 }
 function setArtField(wrap,input,on,clearHidden){
@@ -1349,6 +1361,10 @@ function measurementValues(){
 }
 function validateArtMeasurements(){
  const a=els.art.value.toLocaleUpperCase('tr-TR').trim();
+ if(a==='DİĞER'){
+   if(!els.note.value.trim())return 'DİĞER kaydı için Saha Notu gerekli.';
+   return '';
+ }
  if(!valueNum(els.length)||valueNum(els.length)<=0)return 'Boy / uzunluk değeri gerekli.';
  if(a==='TAŞ DUVAR'&&!els.wallHeight.value)return 'Duvar yüksekliğini seç.';
  if((a==='MENFEZ'||a==='AÇIK KANAL')&&!els.section.value)return 'Kesit seç.';
@@ -1426,9 +1442,20 @@ async function saveCurrent(){
  await dbPut(r);toast('Tespit kaydedildi.');clearGpsWatch();show('home');await refreshList();
 }
 async function refreshList(){const q=els.search.value.toLocaleUpperCase('tr-TR').trim();const all=(await dbAll()).filter(r=>r.projectId===activeProjectId);let rows=[...all].sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||''));if(q)rows=rows.filter(r=>[r.district,r.village,r.locationName,r.artType].join(' ').toLocaleUpperCase('tr-TR').includes(q));els.count.textContent=`${all.length} tespit`;els.list.innerHTML='';els.empty.hidden=rows.length>0;rows.forEach((r,i)=>{const d=document.createElement('div');d.className='record card';const rp=(r.photos||[]).find(p=>p.selected)||(r.photos||[])[0];let thumb='<div class="thumb"></div>';if(rp){const u=URL.createObjectURL(rp.blob);objectUrls.push(u);thumb=`<img class="thumb" src="${u}" alt="Rapor fotoğrafı">`;}const gps=r.coordX!==''&&r.coordX!=null?`X ${r.coordX} / Y ${r.coordY}`:'Konum yok';d.innerHTML=`${thumb}<div><h3>${r.village||'—'}${r.locationName?' • '+r.locationName:''}</h3><p>${r.district||''} • ${r.artType||'İmalat girilmedi'}</p><p>${gps} • ${(r.photos||[]).length} foto</p></div><div class="num">#${i+1}</div>`;d.addEventListener('click',()=>editRecord(r.id));els.list.appendChild(d);});}
-async function recordsForExport(){return (await dbAll()).filter(r=>r.projectId===activeProjectId).sort((a,b)=>(a.createdAt||'').localeCompare(b.createdAt||'')).map(r=>({...r,reportPhotoBlob:((r.photos||[]).find(p=>p.selected)||(r.photos||[])[0])?.blob||null}));}
+async function recordsForExport(){
+ const rows=(await dbAll()).filter(r=>r.projectId===activeProjectId);
+ // Normal imalatların kendi saha sırası korunur; DİĞER kayıtları ise kendi aralarındaki
+ // saha sırası bozulmadan Excel GİRİŞ ve Raporlar'ın en sonuna taşınır.
+ rows.sort((a,b)=>{
+   const ad=(a.artType||'').toLocaleUpperCase('tr-TR').trim()==='DİĞER';
+   const bd=(b.artType||'').toLocaleUpperCase('tr-TR').trim()==='DİĞER';
+   if(ad!==bd)return ad?1:-1;
+   return (a.createdAt||'').localeCompare(b.createdAt||'');
+ });
+ return rows.map(r=>({...r,reportPhotoBlob:((r.photos||[]).find(p=>p.selected)||(r.photos||[])[0])?.blob||null}));
+}
 function downloadBlob(blob,name){if(blob.type==='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'){name=(name||'Altyapi_Hasar_Tespit.xlsx').replace(/\.zip$/i,'');if(!/\.xlsx$/i.test(name))name=name.replace(/\.[^.]+$/,'')+'.xlsx';}const a=document.createElement('a');const u=URL.createObjectURL(blob);a.href=u;a.download=name;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(u),10000);}
-async function doExport(){const recs=await recordsForExport();const project=await activeProject();if(!project?.disasterDate||!project?.district||!project?.authority){toast('Önce proje bilgilerini tamamla.');openProjectDialog('edit');return;}if(!recs.length){toast('Önce tespit kaydı oluştur.');return;}const unsupported=recs.filter(r=>!ACTIVE_ART_TYPES.includes((r.artType||'').toLocaleUpperCase('tr-TR')));if(unsupported.length){els.exportProgress.textContent=`${unsupported.length} eski kayıtta artık desteklenmeyen imalat var. Önce bu kayıtları düzenle.`;toast('Desteklenmeyen eski imalat kaydı var.');return;}const incomplete=recs.filter(r=>!r.village||!r.artType||!r.reportPhotoBlob);if(incomplete.length){const msg=`${incomplete.length} tespitte köy/mahalle, imalat cinsi veya fotoğraf eksik. Excel oluşturulmadı. Eksik kayıtları tamamla.`;els.exportProgress.textContent=msg;alert(msg);return;}els.exportProgress.textContent='Excel hazırlanıyor; GİRİŞ dolduruluyor ve fotoğraflar yerleştiriliyor…';$('#doExportBtn').disabled=true;try{const blob=await XlsxExporter.exportWorkbook(recs,{project});const name=els.exportName.value.trim()||'Altyapi_Hasar_Tespit.xlsx';downloadBlob(blob,name);els.exportProgress.textContent='Excel oluşturuldu. Dosya cihazın İndirilenler klasörüne kaydedildi.';toast('Excel oluşturuldu.');setTimeout(()=>els.dialog.close(),900);}catch(e){console.error(e);els.exportProgress.textContent='Hata: '+e.message;}finally{$('#doExportBtn').disabled=false;}}
+async function doExport(){const recs=await recordsForExport();const project=await activeProject();if(!project?.disasterDate||!project?.district||!project?.authority){toast('Önce proje bilgilerini tamamla.');openProjectDialog('edit');return;}if(!recs.length){toast('Önce tespit kaydı oluştur.');return;}const unsupported=recs.filter(r=>!ACTIVE_ART_TYPES.includes((r.artType||'').toLocaleUpperCase('tr-TR')));if(unsupported.length){els.exportProgress.textContent=`${unsupported.length} eski kayıtta artık desteklenmeyen imalat var. Önce bu kayıtları düzenle.`;toast('Desteklenmeyen eski imalat kaydı var.');return;}const incomplete=recs.filter(r=>!r.village||!r.artType||!r.reportPhotoBlob||((r.artType||'').toLocaleUpperCase('tr-TR').trim()==='DİĞER'&&!String(r.note||'').trim()));if(incomplete.length){const msg=`${incomplete.length} tespitte köy/mahalle, imalat cinsi, fotoğraf veya DİĞER için saha notu eksik. Excel oluşturulmadı. Eksik kayıtları tamamla.`;els.exportProgress.textContent=msg;alert(msg);return;}els.exportProgress.textContent='Excel hazırlanıyor; GİRİŞ dolduruluyor ve fotoğraflar yerleştiriliyor…';$('#doExportBtn').disabled=true;try{const blob=await XlsxExporter.exportWorkbook(recs,{project});const name=els.exportName.value.trim()||'Altyapi_Hasar_Tespit.xlsx';downloadBlob(blob,name);els.exportProgress.textContent='Excel oluşturuldu. Dosya cihazın İndirilenler klasörüne kaydedildi.';toast('Excel oluşturuldu.');setTimeout(()=>els.dialog.close(),900);}catch(e){console.error(e);els.exportProgress.textContent='Hata: '+e.message;}finally{$('#doExportBtn').disabled=false;}}
 
 function blobToDataUrl(blob){return new Promise((res,rej)=>{const fr=new FileReader();fr.onload=()=>res(fr.result);fr.onerror=()=>rej(fr.error);fr.readAsDataURL(blob);});}
 async function serializeRecords(rows){
