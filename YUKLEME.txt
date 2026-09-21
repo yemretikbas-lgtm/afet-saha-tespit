@@ -1,21 +1,11 @@
-RİZE AFET SAHA TESPİT v0.12.2
+GitHub reposuna bu klasorun ICERIGINI yukleyin.
 
-GitHub deposunun köküne şu dosyaları yükleyin / mevcutların üzerine yazın:
-- index.html
-- manifest.webmanifest
-- sw.js
-- icon-192.png
-- icon-512.png
+Kok /              = en guncel v0.12.5.1 (21.09.2026 CIKTI Excel kaynakli)
+/v0123/            = sabit v0.12.3 arsivi
+/v0124/            = sabit v0.12.4 arsivi
+/v0125/            = sabit v0.12.5 arsivi
+/v01251/           = sabit v0.12.5.1 arsivi (guncel kaynak Excel)
+/KAYNAK_EXCEL/     = kok surumde gomulu Excel kaynagi
 
-Test adresi:
-https://yemretikbas-lgtm.github.io/afet-saha-tespit/?v=0122
-
-v0.12.2 yenilikleri:
-- İmalat seçeneklerine DİĞER eklendi.
-- DİĞER seçildiğinde ölçü alanları kapanır; Saha Notu zorunludur.
-- Köy/mahalle, fotoğraf ve imalat cinsi zorunluluğu devam eder.
-- Excel oluşturulurken normal imalatlar önce, tüm DİĞER kayıtları en sonda yer alır.
-- DİĞER kayıtlarının kendi saha sırası korunur.
-- DİĞER raporunda fotoğraf normal şekilde yerleşir; açıklama doğrudan Saha Notu olur.
-- DİĞER için ölçü/maliyet üretilmez; GİRİŞ K-N boş kalır.
-- v0.12.1 birim ve doğrulama düzeltmeleri korunur.
+Kok surumdeki Excel kaynagi, kullanicinin 21.09.2026 tarihli yazdirma alani/sayfa ayari duzeltmelerini icerir.
+Formul mantigi korunmustur. Rize Excel kaydinda Excel'in istemeden ekledigi harici [1] kitap onekleri temizlenmistir.
