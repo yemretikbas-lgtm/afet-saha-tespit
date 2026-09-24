@@ -1,4 +1,4 @@
-const CACHE_NAME = 'afet-saha-tespit-v0.12.7-json-birlestir-20260924';
+const CACHE_NAME = 'afet-saha-tespit-v0.12.8-json-birlestir-ym-puan-20260924';
 const APP_SHELL = [
   './',
   './index.html',
