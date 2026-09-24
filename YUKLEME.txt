@@ -1,14 +1,14 @@
 GitHub reposuna bu klasorun ICERIGINI yukleyin.
 
-Kok surum = Afet Saha Tespit Rize v0.12.9 (24.09.2026)
+Kok surum = Afet Saha Tespit Rize v0.12.10 (24.09.2026)
 Excel kapasitesi: 200 tespit.
 - GIRIS: 200 kayit
 - ICMAL: 200 kayit + genel toplam/imza
 - Raporlar: 200 kayda kadar rapor
-- Raporlarda koordinat satirinin altinda: YM:<tutar> TL | Puan:<deger>
+- Raporlarda koordinat satirinin altinda AYRI hucrede FORMULLU bilgi: YM: 1.235.535,54 TL | Puan:100
 - Oncelik derecesi GIRIS!G kolonundan gelir. Deger yoksa Puan: etiketi kalir, 0 yazmaz.
-- Rapor sablonundaki 200 noktanin TAMAMINDA YM/Puan satiri rapor metninden ayri hucre/bant olarak duzenlenmistir.
-- Daha once rapor metniyle birlesik olan kartlar ayrilarak tum 200 rapor ayni duzene getirilmiştir.
+- YM/Puan bilgisi formullu birakilmistir; telefondaki onizleyici formulu yeniden hesaplamazsa bos gorunebilir. Masaustu Excel yeniden hesaplayinca gorunur.
+- 19-27, 37-45, 55-63, 73-81, 91-99, 109-117, 127-135 dahil tum rapor kartlarinda rapor metni alani birlestirilmis ve YM/Puan bandindan ayrilmistir.
 - KAYNAK_EXCEL/RIZE_SOURCE_TEMPLATE.xlsx uygulamaya gomulu Excel'in kaynak kopyasidir.
 
 Mevcut saha tespit fonksiyonlari, AMB, GPS, fotograf, maliyet ve JSON Birlestir mantigi korunmustur.
