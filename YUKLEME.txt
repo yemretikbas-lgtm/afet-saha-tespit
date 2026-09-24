@@ -1,11 +1,13 @@
 GitHub reposuna bu klasorun ICERIGINI yukleyin.
 
-Kok /              = en guncel v0.12.5.1 (21.09.2026 CIKTI Excel kaynakli)
-/v0123/            = sabit v0.12.3 arsivi
-/v0124/            = sabit v0.12.4 arsivi
-/v0125/            = sabit v0.12.5 arsivi
-/v01251/           = sabit v0.12.5.1 arsivi (guncel kaynak Excel)
-/KAYNAK_EXCEL/     = kok surumde gomulu Excel kaynagi
+Kok surum = Afet Saha Tespit Rize v0.12.7 (24.09.2026)
+Excel kapasitesi: 200 tespit.
+- GIRIS: 200 kayit
+- ICMAL: 200 kayit + genel toplam/imza
+- Raporlar: 200 kayda kadar rapor
+- KAYNAK_EXCEL/RIZE_SOURCE_TEMPLATE.xlsx uygulamaya gomulu Excel'in kaynak kopyasidir.
 
-Kok surumdeki Excel kaynagi, kullanicinin 21.09.2026 tarihli yazdirma alani/sayfa ayari duzeltmelerini icerir.
-Formul mantigi korunmustur. Rize Excel kaydinda Excel'in istemeden ekledigi harici [1] kitap onekleri temizlenmistir.
+Mevcut saha tespit fonksiyonlari, AMB, GPS, fotograf ve maliyet mantigi korunmustur.
+GitHub Pages icin index.html, sw.js, manifest.webmanifest ve ikonlar repo kokunde kalmalidir.
+
+YENİ: JSON Birleştir — aynı afet tarihi + ilçe + sorumlu idareye ait birden fazla proje yedeğini tek projede birleştirir. En fazla 200 benzersiz tespit.
