@@ -1,4 +1,4 @@
-const CACHE_NAME = 'afet-saha-tespit-v0.12.8-json-birlestir-ym-puan-20260924';
+const CACHE_NAME = 'afet-saha-tespit-v0.12.9-json-birlestir-ym-puan-rapor-fix-20260924';
 const APP_SHELL = [
   './',
   './index.html',
@@ -30,7 +30,6 @@ self.addEventListener('fetch', event => {
   const url = new URL(req.url);
   if (url.origin !== self.location.origin) return;
 
-  // Prefer current online version, but fall back to the installed offline copy.
   event.respondWith(
     fetch(req)
       .then(resp => {
