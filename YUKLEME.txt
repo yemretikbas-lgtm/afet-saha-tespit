@@ -1,6 +1,10 @@
+RIZE AFET SAHA TESPIT v0.12.12
+Kaynak Excel: RIZE_SOURCE_TEMPLATE_200_FINAL.xlsx
+Bu surumde kullanicinin duzelttigi yazdirma alanlari ve sayfa ayarlari korunarak kaynak Excel byte-for-byte gomulmustur.
+
 GitHub reposuna bu klasorun ICERIGINI yukleyin.
 
-Kok surum = Afet Saha Tespit Rize v0.12.11 (25.09.2026)
+Kok surum = Afet Saha Tespit Rize v0.12.12 (25.09.2026)
 Excel kapasitesi: 200 tespit.
 - GIRIS: 200 kayit
 - ICMAL: 200 kayit + genel toplam/imza
